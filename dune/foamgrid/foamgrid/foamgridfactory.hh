@@ -14,22 +14,23 @@
 #include <dune/common/fvector.hh>
 
 #include <dune/grid/common/gridfactory.hh>
-#include <dune/foamgrid/foamgrid.hh>
+
+#include "../foamgrid.hh"
 
 namespace Dune {
 
     /** \brief Specialization of the generic GridFactory for FoamGrid
-        
+
     */
     template <int dimworld>
-    class GridFactory<FoamGrid<dimworld> > 
+    class GridFactory<FoamGrid<dimworld> >
         : public GridFactoryInterface<FoamGrid<dimworld> > {
 
         /** \brief Type used by the grid for coordinates */
         typedef typename FoamGrid<dimworld>::ctype ctype;
 
         typedef typename std::map<FieldVector<ctype,1>, unsigned int>::iterator VertexIterator;
-        
+
         enum {dim = FoamGrid<dimworld>::dimension};
 
     public:
@@ -44,7 +45,7 @@ namespace Dune {
             grid_->entityImps_.resize(1);
         }
 
-        /** \brief Constructor for a given grid object 
+        /** \brief Constructor for a given grid object
 
         If you already have your grid object constructed you can
         hand it over using this constructor.
@@ -61,7 +62,7 @@ namespace Dune {
 
             grid_->entityImps_.resize(1);
         }
-        
+
         /** \brief Destructor */
         virtual ~GridFactory() {
             if (grid_ && factoryOwnsGrid_)
@@ -82,18 +83,10 @@ namespace Dune {
         */
         virtual void insertElement(const GeometryType& type,
                                    const std::vector<unsigned int>& vertices) {
+	    assert(type.isLine());
+ 	    FoamGridEntityImp<1,dimworld> newElement(vertexArray_[vertices[0]],vertexArray_[vertices[1]],0,grid_->freeIdCounter_[1]++);
+	    Dune::get<1>(grid_->entityImps_[0]).push_back(newElement);
 
-            assert(type.isTriangle());
-
-            FoamGridEntityImp<2,dimworld> newElement(0,   // level
-                                       grid_->freeIdCounter_[dim]++);  // id
-            newElement.vertex_[0] = vertexArray_[vertices[0]];
-            newElement.vertex_[1] = vertexArray_[vertices[1]];
-            newElement.vertex_[2] = vertexArray_[vertices[2]];
-
-            Dune::get<dim>(grid_->entityImps_[0]).push_back(newElement);
-
-            
         }
 
         /** \brief Insert a boundary segment.
@@ -105,7 +98,7 @@ namespace Dune {
         }
 
         /** \brief Insert a boundary segment (== a line) and the boundary segment geometry
-         * 
+         *
             This influences the ordering of the boundary segments.
             Currently, the BoundarySegment object does not actually have any effect.
         */
@@ -125,73 +118,26 @@ namespace Dune {
             if (grid_==nullptr)
                 return nullptr;
 
-            // ////////////////////////////////////////////////////
-            //   Create the edges
-            // ////////////////////////////////////////////////////
+	        typename std::list<FoamGridEntityImp<1,dimworld> >::iterator eIt    = Dune::get<1>(grid_->entityImps_[0]).begin();
+		typename std::list<FoamGridEntityImp<1,dimworld> >::iterator eEndIt = Dune::get<1>(grid_->entityImps_[0]).end();
 
-            // for convenience
-            typedef FoamGridEntityImp<0,dimworld> FoamGridVertex;
+		for(;eIt!=eEndIt;eIt++) {
 
-            // For fast retrieval: a map from pairs of vertices to the edge that connects them
-            std::map<std::pair<const FoamGridEntityImp<0,dimworld>*, const FoamGridEntityImp<0,dimworld>*>, FoamGridEntityImp<1,dimworld>*> edgeMap;
+                    // Get two vertices of the edge
+                    const FoamGridEntityImp<0,dimworld>* v0 = eIt->vertex_[0];
+                    const FoamGridEntityImp<0,dimworld>* v1 = eIt->vertex_[1];
 
-            typename std::list<FoamGridEntityImp<2,dimworld> >::iterator eIt    = Dune::get<2>(grid_->entityImps_[0]).begin();
-            typename std::list<FoamGridEntityImp<2,dimworld> >::iterator eEndIt = Dune::get<2>(grid_->entityImps_[0]).end();
-
-            for (; eIt!=eEndIt; ++eIt) {
-
-                FoamGridEntityImp<2,dimworld>* element = &(*eIt);
-
-                const Dune::ReferenceElement<double,dim>& refElement
-                    = Dune::ReferenceElements<double, dim>::general(eIt->type());
-
-                // Loop over all edges of this element
-                for (size_t i=0; i<element->edges_.size(); ++i) {
-
-                    // Get two vertices of the potential edge
-                    const FoamGridVertex* v0 = element->vertex_[refElement.subEntity(i, 1, 0, 2)];
-                    const FoamGridVertex* v1 = element->vertex_[refElement.subEntity(i, 1, 1, 2)];
-
-                    FoamGridEntityImp<1,dimworld>* existingEdge = nullptr;
-                    typename std::map<std::pair<const FoamGridEntityImp<0,dimworld>*, const FoamGridEntityImp<0,dimworld>*>, FoamGridEntityImp<1,dimworld>*>::const_iterator e = edgeMap.find(std::make_pair(v0,v1));
-
-                    if (e != edgeMap.end()) {
-                        existingEdge = e->second;
-                    } else {
-                        e = edgeMap.find(std::make_pair(v1,v0));
-                        if (e != edgeMap.end())
-                            existingEdge = e->second;
-                    }
-
-                    if (existingEdge == nullptr) {
-
-                        // The current edge has not been inserted already.  We do that now
-
-                        Dune::get<1>(grid_->entityImps_[0]).push_back(FoamGridEntityImp<1,dimworld>(v0,
-                                                                                                    v1,
-                                                                                                    0,   // level
-                                                                                                    grid_->freeIdCounter_[1]++    // id
-                                                                                                    ));
-
-                        existingEdge = &*Dune::get<1>(grid_->entityImps_[0]).rbegin();
-                                                                   
-                        edgeMap.insert(std::make_pair(std::make_pair(v0,v1), existingEdge));
-                        
-                    }
-
-                    // make element know about the edge
-                    element->edges_[i] = existingEdge;
-
-                    // make edge know about the element
-                    existingEdge->elements_.push_back(element);
+		    // make vertices know about edge
+		    // using const_cast because of the implementation of FoamGridEntityImp<1,dimworld>
+		    // the member variable vertex_ is an array with pointers to const vertices
+		    const_cast <FoamGridEntityImp<0,dimworld>*> (v0)->elements_.push_back(&*eIt);
+		    const_cast <FoamGridEntityImp<0,dimworld>*> (v1)->elements_.push_back(&*eIt);
 
                 }
 
-            }
-
             // Create the index sets
             grid_->setIndices();
-            
+
 
             // ////////////////////////////////////////////////
             //   Set the boundary ids
@@ -200,12 +146,11 @@ namespace Dune {
 
             unsigned int boundaryIdCounter = 0;
 
-            for (typename std::list<FoamGridEntityImp<1,dimworld> >::iterator it = Dune::get<1>(grid_->entityImps_[0]).begin();
-                 it != Dune::get<1>(grid_->entityImps_[0]).end();
+            for (typename std::list<FoamGridEntityImp<0,dimworld> >::iterator it = Dune::get<0>(grid_->entityImps_[0]).begin();
+                 it != Dune::get<0>(grid_->entityImps_[0]).end();
                  ++it)
                 if(it->elements_.size()==1)
                     it->boundaryId_ = boundaryIdCounter++;
-
 
             // ////////////////////////////////////////////////
             //   Hand over the new grid

@@ -24,12 +24,12 @@ namespace Dune {
 
         //! level
         int level_;
-        
-        //! entity number 
+
+        //! entity number
         unsigned int levelIndex_;
-        
+
         unsigned int leafIndex_;
-        
+
         unsigned int id_;
         //! \brief Whether this entity will vanish due to coarsening.
         bool willVanish_;
@@ -50,19 +50,23 @@ namespace Dune {
         : public FoamGridEntityBase
     {
     public:
-        
-        FoamGridEntityImp(int level, const FieldVector<double, dimworld>& pos, unsigned int id) 
+
+        FoamGridEntityImp(int level, const FieldVector<double, dimworld>& pos, unsigned int id)
             : FoamGridEntityBase(level, id),
-              pos_(pos), son_(nullptr) 
+              pos_(pos), son_(nullptr)
         {}
-        
-        //private: 
-        bool isLeaf() const {
+
+        //private:
+        bool isLeaf() const {;
             return son_==nullptr;
         }
 
         GeometryType type() const {
             return GeometryType(0);
+        }
+
+        unsigned int boundarySegmentIndex() const {
+            return boundaryId_;
         }
 
         /** \brief Number of corners (==1) */
@@ -77,7 +81,7 @@ namespace Dune {
         PartitionType partitionType() const {
             return InteriorEntity;
         }
-        
+
         /** \brief Return level index of sub entity with codim = cc and local number i
          */
         int subLevelIndex (int i, unsigned int codim) const {
@@ -95,10 +99,15 @@ namespace Dune {
         }
 
         FieldVector<double, dimworld> pos_;
-        
+
+	std::vector<const FoamGridEntityImp<1,dimworld>*> elements_;
+
+	//only used if the vertex is a boundary vertex
+	unsigned int boundaryId_;
+
         //! Son vertex on the next finer grid
         FoamGridEntityImp<0,dimworld>* son_;
-        
+
     };
 
 }
